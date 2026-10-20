@@ -81,7 +81,8 @@ export class QuotaController {
     const abort = new AbortController();
     const active = () => this.generation === generation && this.request?.abort === abort;
     // Keep the last result visible during refresh; selection already clears it.
-    if (this.state.kind !== 'ready' && this.state.kind !== 'loading') {
+    if (this.state.kind !== 'ready' && this.state.kind !== 'loading'
+      && !(this.state.kind === 'error' && this.state.snapshot)) {
       this.publish({ kind: 'loading', provider: adapter.provider, label: adapter.label });
     }
     const deadline = setTimeout(() => abort.abort(new QuotaError('timeout')), this.timeout);
@@ -103,8 +104,11 @@ export class QuotaController {
         this.failures++;
         const backoff = Math.min(900000, this.interval * 2 ** Math.min(this.failures - 1, 4));
         this.nextAttempt = this.now() + Math.max(backoff, safe.retryAfterMs ?? 0);
-        // Do not retain a prior account's cached quota after auth changes/errors.
-        this.publish({ kind: 'error', provider: adapter.provider, label: adapter.label, code: safe.code });
+        // Only transient failures retain values; auth/config/schema errors invalidate them.
+        const snapshot = ['network', 'timeout', 'rate-limit', 'http'].includes(safe.code)
+          && (this.state.kind === 'ready' || this.state.kind === 'error') ? this.state.snapshot : undefined;
+        this.publish({ kind: 'error', provider: adapter.provider, label: adapter.label, code: safe.code,
+          ...(snapshot ? { snapshot } : {}) });
       } finally {
         clearTimeout(deadline);
         if (active()) this.request = undefined;

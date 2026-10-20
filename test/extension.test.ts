@@ -77,6 +77,31 @@ test('factory is idle; session start queries current provider and shutdown clear
   assert.equal(h.statuses.at(-1), undefined);
 });
 
+test('footer survives a failed query and gains ? at five minutes even during retry backoff', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: Date.now() });
+  const h = harness();
+  t.after(h.cleanup);
+  h.emit('session_start');
+  await tick();
+  const original = h.statuses.at(-1);
+  h.respondWith(async () => { throw new Error('temporary outage'); });
+  await h.commands.get('usage')!.handler('--all', h.ctx);
+  assert.equal(h.statuses.at(-1), original);
+  assert.ok(usageCardComponent(h.entries[0].data).render(100).some(line => line.includes('Network error')));
+  t.mock.timers.tick(299999);
+  await tick();
+  assert.equal(h.statuses.at(-1)?.endsWith(' ? '), false);
+  t.mock.timers.tick(1);
+  await tick();
+  assert.equal(h.statuses.at(-1)?.endsWith(' ? '), true);
+  h.respondWith(async () => new Response(JSON.stringify({
+    usage: { limit: 100, used: 20, resetTime: '2099-01-01T00:00:00Z' }, limits: [],
+  })));
+  await h.commands.get('usage')!.handler('', h.ctx);
+  assert.equal(h.statuses.at(-1)?.endsWith(' ? '), false);
+  assert.ok(h.statuses.at(-1)?.includes('80%'));
+});
+
 test('model select hides unsupported quota immediately; turn end is throttled', async t => {
   const h = harness();
   t.after(h.cleanup);

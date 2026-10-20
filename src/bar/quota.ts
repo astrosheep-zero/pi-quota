@@ -47,8 +47,11 @@ export function quotaElement(state: QuotaState, now = Date.now(), maxWindows: Fo
   const element: BarElement = { id: 'quota', spans: [] };
   if (state.kind === 'hidden') return element;
   if (state.kind === 'loading') return { ...element, spans: [{ text: 'Quota …', tone: 'dim' }] };
-  if (state.kind === 'error') return { ...element, spans: [{ text: `Quota ! ${errorText[state.code]}`, tone: 'warning' }] };
-  const { balances, limits } = state.snapshot;
+  if (state.kind === 'error' && !state.snapshot) {
+    return { ...element, spans: [{ text: `Quota ! ${errorText[state.code]}`, tone: 'warning' }] };
+  }
+  const snapshot = state.snapshot!; // Error states without a snapshot returned above.
+  const { balances, limits } = snapshot;
   const shared = limits.filter(limit => !limit.scope);
   const eligible = shared.length ? shared : limits;
   const shown = maxWindows === 'all' ? eligible : eligible.slice(0, maxWindows);
@@ -60,6 +63,9 @@ export function quotaElement(state: QuotaState, now = Date.now(), maxWindows: Fo
   balances.forEach(balance => append(balanceSpans(balance, balances.length > 1)));
   shown.forEach(limit => append(limitSpans(limit, now)));
   if (limits.length > shown.length) spans.push({ text: ` +${limits.length - shown.length}`, tone: 'dim' });
+  if (spans.length && state.kind === 'error' && now - snapshot.fetchedAt >= 300000) {
+    spans.push({ text: ' ?', tone: 'dim' });
+  }
   return { ...element, spans };
 }
 

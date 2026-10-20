@@ -105,7 +105,7 @@ test('timeout also bounds non-cooperative auth/adapters', async () => {
   assert.deepEqual(controller.state, { kind: 'error', provider: 'a', label: 'A', code: 'timeout' });
 });
 
-test('error drops stale values, redacts arbitrary exceptions, and backs off', async () => {
+test('transient errors retain the original snapshot, redact exceptions, back off and recover', async () => {
   let clock = 100000;
   let fail = false;
   let calls = 0;
@@ -118,7 +118,8 @@ test('error drops stale values, redacts arbitrary exceptions, and backs off', as
   await controller.refresh(auth);
   fail = true;
   await controller.refresh(auth, true);
-  assert.deepEqual(controller.state, { kind: 'error', provider: 'a', label: 'A', code: 'network' });
+  assert.deepEqual(controller.state, { kind: 'error', provider: 'a', label: 'A', code: 'network', snapshot: snapshot() });
+  assert.equal(JSON.stringify(controller.state).includes('TOP-SECRET'), false);
   await controller.refresh(auth);
   assert.equal(calls, 2);
   clock += 60000;
@@ -127,7 +128,35 @@ test('error drops stale values, redacts arbitrary exceptions, and backs off', as
   clock += 60000;
   await controller.refresh(auth);
   assert.equal(calls, 3); // second error -> 120-second backoff
+  assert.deepEqual(controller.state, { kind: 'error', provider: 'a', label: 'A', code: 'network', snapshot: snapshot() });
+  fail = false;
+  clock += 60000;
+  await controller.refresh(auth);
+  assert.deepEqual(controller.state, { kind: 'ready', provider: 'a', label: 'A', snapshot: snapshot() });
 });
+
+for (const code of ['timeout', 'rate-limit', 'http', 'auth', 'unsupported-auth', 'account-access', 'schema'] as const) {
+  test(`${code} ${['timeout', 'rate-limit', 'http'].includes(code) ? 'retains' : 'invalidates'} cached data`, async () => {
+    let fail = false;
+    const { controller } = setup([{ provider: 'a', label: 'A', query: async () => {
+      if (fail) throw new QuotaError(code);
+      return snapshot();
+    } }]);
+    controller.select('a');
+    await controller.refresh(auth);
+    fail = true;
+    await controller.refresh(auth, true);
+    const expected = { kind: 'error', provider: 'a', label: 'A', code,
+      ...(['timeout', 'rate-limit', 'http'].includes(code) ? { snapshot: snapshot() } : {}) };
+    assert.deepEqual(controller.state, expected);
+    await controller.refresh(auth, true);
+    assert.deepEqual(controller.state, expected);
+    controller.select('a');
+    assert.deepEqual(controller.state, { kind: 'loading', provider: 'a', label: 'A' });
+    await controller.refresh(auth);
+    assert.deepEqual(controller.state, { kind: 'error', provider: 'a', label: 'A', code });
+  });
+}
 
 test('honors Retry-After; unsupported provider has no queries', async () => {
   let clock = 100000;

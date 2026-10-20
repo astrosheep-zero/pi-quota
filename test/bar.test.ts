@@ -81,6 +81,23 @@ test('hidden/loading/error do not masquerade as measured zero', () => {
   assert.equal(renderFooter({ kind: 'error', provider: 'a', label: 'A', code: 'timeout' }), 'Quota ! Request timed out ');
 });
 
+test('cached footer adds a dim question mark only at five minutes since the last success', () => {
+  const cached: QuotaState = { kind: 'error', provider: state.provider, label: state.label,
+    code: 'network', snapshot: state.snapshot };
+  for (const age of [0, 299999]) {
+    assert.equal(renderFooter(cached, undefined, now + age), renderFooter(state, undefined, now + age));
+  }
+  for (const age of [300000, 900000]) {
+    assert.equal(renderFooter(cached, undefined, now + age),
+      `${renderFooter(state, undefined, now + age).trimEnd()} ? `);
+  }
+  const calls: [string, string][] = [];
+  renderFooter(cached, (tone, text) => { calls.push([tone, text]); return text; }, now + 300000);
+  assert.ok(calls.some(([tone, text]) => tone === 'dim' && text === ' ?'));
+  assert.equal(renderFooter(state, undefined, now + 300000).endsWith(' ? '), false);
+  assert.deepEqual(renderUsage(cached), ['Codex', '', '  Network error']);
+});
+
 test('quota composes as one element of a larger bar, independently of query implementation', () => {
   assert.equal(renderBar([
     { id: 'context', spans: [{ text: 'ctx [▃] 32%' }] }, quotaElement(state, now),

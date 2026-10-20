@@ -82,4 +82,5 @@ export type QuotaState =
   | { kind: 'hidden' }
   | { kind: 'loading'; provider: string; label: string }
   | { kind: 'ready'; provider: string; label: string; snapshot: QuotaSnapshot }
-  | { kind: 'error'; provider: string; label: string; code: QuotaErrorCode };
+  // Transient failures may retain the last successful snapshot for footer display.
+  | { kind: 'error'; provider: string; label: string; code: QuotaErrorCode; snapshot?: QuotaSnapshot };
