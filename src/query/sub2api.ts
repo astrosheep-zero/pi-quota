@@ -69,8 +69,12 @@ function subscriptionWindows(data: Record<string, unknown>): UsageLimit[] {
     const used = numeric(data[usedKey]);
     if (used === null || used < 0) throw new QuotaError('schema');
     const amounts: LimitAmounts = { unit: 'USD', limit, used, remaining: Math.max(0, limit - used) };
+    // Sub2API's WeeklyResetTime is the reported weekly anchor plus seven days.
+    // The usage endpoint exposes no daily/monthly anchor or server timezone.
+    const start = id === 'weekly' ? timestamp(data.weekly_window_start) : null;
+    const resetAt = start === null ? null : start + durationSeconds * 1000;
     return [{ id, label, durationSeconds, remainingPercent: percentFromAmounts(amounts.remaining, limit),
-      resetAt: null, amounts }];
+      resetAt, amounts }];
   });
 }
 

@@ -65,7 +65,22 @@ test('rate-only key needs no top-level unit; subscription zero caps are not fabr
   assert.equal(subscription.kind, 'ready');
   if (subscription.kind !== 'ready') return;
   assert.deepEqual(subscription.snapshot.limits.map(w => [w.label, w.remainingPercent]), [['1d', 80], ['1w', 75]]);
-  assert.equal(subscription.snapshot.limits[1].resetAt, null, 'window start alone does not specify next reset');
+  assert.equal(subscription.snapshot.limits[0].resetAt, null, 'daily reset needs the server timezone');
+  assert.equal(subscription.snapshot.limits[1].resetAt, Date.parse('2026-09-08T00:00:00Z'));
+});
+
+test('subscription weekly reset follows its reported anchor, not plan expiry or calendar weeks', () => {
+  const payload = { mode: 'unrestricted', isValid: true, unit: 'USD', subscription: {
+    daily_usage_usd: 2, daily_limit_usd: 100, weekly_usage_usd: 158, weekly_limit_usd: 200,
+    monthly_usage_usd: 158, monthly_limit_usd: 400,
+    weekly_window_start: '2026-10-19T14:33:11.126437+08:00', expires_at: '2026-11-18T12:46:37+08:00',
+  } };
+  const limits = parseSub2ApiUsage(payload).limits;
+  assert.deepEqual(limits.map(limit => limit.resetAt), [null, Date.parse('2026-10-26T14:33:11.126+08:00'), null]);
+  for (const anchor of [undefined, null, 'invalid']) {
+    assert.equal(parseSub2ApiUsage({ ...payload, subscription: { ...payload.subscription,
+      weekly_window_start: anchor } }).limits[1].resetAt, null);
+  }
 });
 
 test('malformed limits and unknown windows never become a made-up daily quota', () => {
